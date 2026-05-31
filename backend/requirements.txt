@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+langchain
+langgraph
+langchain-openai
+langgraph-checkpoint-mongodb
+pymongo
+openai
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart
