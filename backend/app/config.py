@@ -19,8 +19,9 @@ class Settings(BaseSettings):
     mongo_db_uri: str
     mongo_db_name: str = "chat_app"
     chat_model: str = "openai:gpt-5.4-mini"
-
-    # Browser origins allowed to call the API (frontend dev servers).
+    classifier_model: str = "openai:gpt-5.4-nano"
+    qdrant_url: str
+    qdrant_api_key: str
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost:5180",
