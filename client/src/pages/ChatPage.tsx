@@ -1,45 +1,62 @@
-import { useState } from "react";
-import { USERS, CONVERSATIONS } from "../data/mockData";
+import { useState, useEffect } from "react";
+import { useSelector, useDispatch } from "react-redux";
+import type { RootState, AppDispatch } from "../store";
+import { clearUser } from "../store/authSlice";
+import { useGetUserChatsQuery } from "../services/chatApi";
 import Sidebar from "../components/Sidebar";
 import ChatWindow from "../components/ChatWindow";
 
 export default function ChatPage() {
-  const [userId, setUserId] = useState<number>(USERS[0].id);
-  const [activeChatId, setActiveChatId] = useState<string>(
-    CONVERSATIONS[USERS[0].id][0].id,
-  );
+  const user = useSelector((s: RootState) => s.auth.user)!;
+  const dispatch = useDispatch<AppDispatch>();
+
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const conversations = CONVERSATIONS[userId];
-  const activeConv = conversations.find((c) => c.id === activeChatId);
+  const { data: conversations = [] } = useGetUserChatsQuery({ userId: user?.id });
 
-  function handleUserChange(newUserId: number) {
-    setUserId(newUserId);
-    // Conversations are user-specific -> jump to this user's first chat.
-    setActiveChatId(CONVERSATIONS[newUserId][0].id);
+  // Auto-select the most recent chat on first load.
+  useEffect(() => {
+    if (conversations.length > 0 && !activeChatId) {
+      setActiveChatId(conversations[0].id);
+    }
+  }, [conversations, activeChatId]);
+
+  function handleNewChat() {
+    setActiveChatId(crypto.randomUUID());
   }
 
-  function toggleSidebar() {
-    setSidebarOpen((open) => !open);
+  function handleLogout() {
+    dispatch(clearUser());
   }
+
+  const activeTitle =
+    conversations.find((c) => c.id === activeChatId)?.title ?? "New Chat";
 
   return (
     <div className="flex h-screen overflow-hidden bg-white text-gray-800">
       <Sidebar
         open={sidebarOpen}
-        onToggle={toggleSidebar}
-        userId={userId}
+        onToggle={() => setSidebarOpen((o) => !o)}
+        userName={user?.name}
         conversations={conversations}
         activeChatId={activeChatId}
-        onUserChange={handleUserChange}
+        onNewChat={handleNewChat}
         onSelectChat={setActiveChatId}
+        onLogout={handleLogout}
       />
-      <ChatWindow
-        userId={userId}
-        chatId={activeChatId}
-        title={activeConv?.title ?? ""}
-        onToggleSidebar={toggleSidebar}
-      />
+      {activeChatId ? (
+        <ChatWindow
+          userId={user.id}
+          chatId={activeChatId}
+          title={activeTitle}
+          onToggleSidebar={() => setSidebarOpen((o) => !o)}
+        />
+      ) : (
+        <div className="flex flex-1 items-center justify-center text-sm text-gray-400">
+          Click "New Chat" to start a conversation.
+        </div>
+      )}
     </div>
   );
 }

@@ -1,41 +1,50 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthLayout from "../components/auth/AuthLayout";
 import TextField from "../components/auth/TextField";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-type Errors = {
-  name?: string;
-  email?: string;
-  password?: string;
-  confirm?: string;
-};
-
+import { useForm } from "react-hook-form";
+import z from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useSignupMutation } from "../services/authApi";
+const zodSchema = z
+  .object({
+    name: z.string().min(1, "Name is required"),
+    email: z.email(),
+    password: z.string().min(6, "Minimum 6 characters"),
+    confirm_password: z.string(),
+  })
+  .refine((data) => data.password === data.confirm_password, {
+    message: "Passwords do not match",
+    path: ["confirm_password"],
+  });
+type FormValues = z.infer<typeof zodSchema>;
 export default function SignupPage() {
   const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
-  const [errors, setErrors] = useState<Errors>({});
-
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const next: Errors = {};
-    if (!name.trim()) next.name = "Name is required";
-    if (!email.trim()) next.email = "Email is required";
-    else if (!EMAIL_RE.test(email)) next.email = "Enter a valid email";
-    if (!password) next.password = "Password is required";
-    else if (password.length < 6) next.password = "Min 6 characters";
-    if (confirm !== password) next.confirm = "Passwords do not match";
-
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
-    // TODO: wire up to backend auth later. For now, treat as success.
-    navigate("/");
+  const [signup, { isLoading }] = useSignupMutation();
+  const [formError, setFormError] = useState("");
+  const {
+    handleSubmit,
+    register,
+    formState: { errors },
+  } = useForm<FormValues>({
+    defaultValues: {
+      name: "",
+      email: "",
+      password: "",
+      confirm_password: "",
+    },
+    resolver: zodResolver(zodSchema),
+    mode: "onTouched",
+  });
+  async function onSubmit(values: FormValues) {
+    setFormError("");
+    try {
+      await signup(values).unwrap();
+      navigate("/login");
+    } catch (err) {
+      const detail = (err as { data?: { detail?: string } })?.data?.detail;
+      setFormError(detail ?? "Signup failed. Please try again.");
+    }
   }
 
   return (
@@ -54,47 +63,52 @@ export default function SignupPage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="flex flex-col gap-4"
+        noValidate
+      >
+        {formError && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            {formError}
+          </p>
+        )}
         <TextField
           id="name"
           label="Name"
-          placeholder="Aarav Sharma"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          error={errors.name}
+          placeholder="Enter Name"
+          {...register("name")}
+          error={errors.name?.message}
         />
         <TextField
           id="email"
           label="Email"
-          type="email"
+          {...register("email")}
           placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={errors.email}
+          error={errors.email?.message}
         />
         <TextField
           id="password"
           label="Password"
-          type="password"
+          type="Password"
+          {...register("password")}
           placeholder="At least 6 characters"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
+          error={errors.password?.message}
         />
         <TextField
           id="confirm"
           label="Confirm password"
-          type="password"
+          type="Password"
+          {...register("confirm_password")}
           placeholder="Re-enter password"
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          error={errors.confirm}
+          error={errors.confirm_password?.message}
         />
         <button
           type="submit"
-          className="mt-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+          disabled={isLoading}
+          className="mt-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Sign up
+          {isLoading ? "Signing up..." : "Sign up"}
         </button>
       </form>
     </AuthLayout>

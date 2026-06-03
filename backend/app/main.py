@@ -1,18 +1,19 @@
 from contextlib import asynccontextmanager
 from pymongo import MongoClient, AsyncMongoClient
-from fastapi import FastAPI, Request, HTTPException, Path
+from fastapi import FastAPI, Request, HTTPException, Path, status
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.mongodb import MongoDBSaver
-from beanie import init_beanie
+from beanie import init_beanie, PydanticObjectId
 from app.config import settings
 from app.graph import build_graph
-from app.schemas import ChatRequest, ChatResponse, MessageOut
-from app.models import ModelsList, Message, Chat
+from app.schemas import ChatRequest, ChatResponse, MessageOut, SignupBody, LoginBody
+from app.models import ModelsList, Message, Chat, User
 from app.constants import ROLES
 from uuid import UUID
 from mem0 import AsyncMemory
 from mem0.configs.base import MemoryConfig
+import bcrypt
 
 custom_instructions = """You are responsible for deciding what user information should be stored as long-term memory.
 
@@ -155,6 +156,48 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/signup")
+async def signup(body: SignupBody):
+    email_exist = await User.find_one(User.email == body.email)
+    if email_exist:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User already exists , Please Login",
+        )
+    pw = body.password.encode("utf-8")[:72]  # bcrypt 72-byte limit
+    hashed_pw = bcrypt.hashpw(pw, bcrypt.gensalt()).decode("utf-8")
+    user = await User(name=body.name, email=body.email, password=hashed_pw).insert()
+    return user
+
+
+@app.post("/login")
+async def login(body: LoginBody):
+    user = await User.find_one(User.email == body.email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="User Doesn't exists , Please Signup",
+        )
+    pw = body.password.encode("utf-8")[:72]
+    is_pw_correct = bcrypt.checkpw(pw, user.password.encode("utf-8"))
+    if not is_pw_correct:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Password",
+        )
+    return {"id": str(user.id), "name": user.name, "email": user.email}
+
+
+@app.get("/chats/{user_id}")
+async def get_user_chats(user_id: PydanticObjectId = Path(...)):
+    chats = (
+        await Chat.find(Chat.user_id == user_id)
+        .sort(-Chat.created_at)
+        .to_list()
+    )
+    return [{"id": str(c.id), "title": c.title} for c in chats]
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest, request: Request):
     graph = request.app.state.graph
@@ -210,7 +253,9 @@ async def chat(body: ChatRequest, request: Request):
 
 
 @app.get("/get-chat-history/{chat_id}/{user_id}", response_model=list[MessageOut])
-async def get_chat_history(chat_id: UUID = Path(...), user_id: int = Path(...)):
+async def get_chat_history(
+    chat_id: UUID = Path(...), user_id: PydanticObjectId = Path(...)
+):
     chat = await Chat.get(chat_id)
     if chat is None:
         # Fresh/unused conversation -> no messages yet (not an error).

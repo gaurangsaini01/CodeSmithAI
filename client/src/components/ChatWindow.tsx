@@ -7,7 +7,7 @@ import MessageList from "./MessageList";
 import Composer from "./Composer";
 
 type Props = {
-  userId: number;
+  userId: string;
   chatId: string;
   title: string;
   onToggleSidebar: () => void;

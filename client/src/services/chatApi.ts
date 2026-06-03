@@ -1,4 +1,5 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+import type { Conversation } from "../types";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -11,7 +12,7 @@ export type ChatMessage = {
 
 export type SendChatRequest = {
   query: string;
-  user_id: number;
+  user_id: string;
   chat_id: string;
 };
 
@@ -22,11 +23,18 @@ export type SendChatResponse = {
 export const chatApi = createApi({
   reducerPath: "chatApi",
   baseQuery: fetchBaseQuery({ baseUrl: API_BASE }),
-  tagTypes: ["ChatHistory"],
+  tagTypes: ["ChatHistory", "UserChats"],
   endpoints: (builder) => ({
+    getUserChats: builder.query<Conversation[], { userId: string }>({
+      query: ({ userId }) => `/chats/${userId}`,
+      providesTags: (_result, _error, { userId }) => [
+        { type: "UserChats", id: userId },
+      ],
+    }),
+
     getChatHistory: builder.query<
       ChatMessage[],
-      { chatId: string; userId: number }
+      { chatId: string; userId: string }
     >({
       query: ({ chatId, userId }) => `/get-chat-history/${chatId}/${userId}`,
       providesTags: (_result, _error, { chatId }) => [
@@ -65,11 +73,17 @@ export const chatApi = createApi({
         }
       },
 
-      invalidatesTags: (_result, _error, { chat_id }) => [
+      // Refresh chat history + sidebar (new chat appears in list after first message).
+      invalidatesTags: (_result, _error, { chat_id, user_id }) => [
         { type: "ChatHistory", id: chat_id },
+        { type: "UserChats", id: user_id },
       ],
     }),
   }),
 });
 
-export const { useGetChatHistoryQuery, useSendChatMutation } = chatApi;
+export const {
+  useGetUserChatsQuery,
+  useGetChatHistoryQuery,
+  useSendChatMutation,
+} = chatApi;

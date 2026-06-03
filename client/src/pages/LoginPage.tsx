@@ -1,32 +1,49 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useDispatch } from "react-redux";
+import type { AppDispatch } from "../store";
+import { setUser } from "../store/authSlice";
 import AuthLayout from "../components/auth/AuthLayout";
 import TextField from "../components/auth/TextField";
+import { useForm } from "react-hook-form";
+import z from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useLoginMutation } from "../services/authApi";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-type Errors = { email?: string; password?: string };
+const zodSchema = z.object({
+  email: z.email(),
+  password: z.string().min(6, "Minimum 6 characters"),
+});
+type FormValues = z.infer<typeof zodSchema>;
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<Errors>({});
+  const dispatch = useDispatch<AppDispatch>();
+  const [login, { isLoading }] = useLoginMutation();
+  const [formError, setFormError] = useState("");
+  const {
+    handleSubmit,
+    register,
+    formState: { errors },
+  } = useForm<FormValues>({
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+    resolver: zodResolver(zodSchema),
+    mode: "onTouched",
+  });
 
-  function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    const next: Errors = {};
-    if (!email.trim()) next.email = "Email is required";
-    else if (!EMAIL_RE.test(email)) next.email = "Enter a valid email";
-    if (!password) next.password = "Password is required";
-    else if (password.length < 6) next.password = "Min 6 characters";
-
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
-    // TODO: wire up to backend auth later. For now, treat as success.
-    navigate("/");
+  async function onSubmit(values: FormValues) {
+    setFormError("");
+    try {
+      const user = await login(values).unwrap();
+      dispatch(setUser(user));
+      navigate("/");
+    } catch (err) {
+      const detail = (err as { data?: { detail?: string } })?.data?.detail;
+      setFormError(detail ?? "Login failed. Please try again.");
+    }
   }
 
   return (
@@ -45,30 +62,37 @@ export default function LoginPage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        className="flex flex-col gap-4"
+        noValidate
+      >
+        {formError && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            {formError}
+          </p>
+        )}
         <TextField
           id="email"
           label="Email"
-          type="email"
+          {...register("email")}
           placeholder="you@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          error={errors.email}
+          error={errors.email?.message}
         />
         <TextField
           id="password"
           label="Password"
-          type="password"
+          type="Password"
+          {...register("password")}
           placeholder="At least 6 characters"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={errors.password}
+          error={errors.password?.message}
         />
         <button
           type="submit"
-          className="mt-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700"
+          disabled={isLoading}
+          className="mt-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Log in
+          {isLoading ? "Logging in..." : "Log in"}
         </button>
       </form>
     </AuthLayout>

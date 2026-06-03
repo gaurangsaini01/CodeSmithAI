@@ -1,12 +1,12 @@
 from datetime import datetime
 from uuid import UUID
-
-from pydantic import BaseModel
+from beanie import PydanticObjectId
+from pydantic import BaseModel, EmailStr
 
 
 class ChatRequest(BaseModel):
     query: str
-    user_id: int
+    user_id: PydanticObjectId
     chat_id: UUID
 
 
@@ -19,3 +19,14 @@ class MessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+
+
+class SignupBody(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+
+
+class LoginBody(BaseModel):
+    email: EmailStr
+    password: str
