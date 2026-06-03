@@ -7,8 +7,7 @@ from app.graph.state import CodingType, QueryType, ResponseState
 
 client = init_chat_model(settings.chat_model)
 classifier_client = init_chat_model(settings.classifier_model)
-MAX_CONTEXT_TOKENS = 2000
-
+MAX_CONTEXT_TOKENS = 6000
 
 def recent(messages):
     return trim_messages(
@@ -67,7 +66,7 @@ def general_node(state: ResponseState, config):
 
 def coding_node(state: ResponseState):
     """Detect coding intent: Fix or Optimize."""
-    llm = client.with_structured_output(CodingType)
+    llm = classifier_client.with_structured_output(CodingType)
 
     res = llm.invoke(
         [
@@ -87,7 +86,7 @@ def coding_node(state: ResponseState):
                    best practices)
                 """
             ),
-            *recent(state["messages"]),
+            *state.get("messages", [])[-2:],
         ]
     )
 

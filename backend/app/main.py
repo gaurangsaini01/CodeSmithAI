@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pymongo import MongoClient, AsyncMongoClient
-from fastapi import FastAPI, Request, HTTPException, Path, status
+from fastapi import FastAPI, Request, HTTPException, Path, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -13,6 +13,8 @@ from app.constants import ROLES
 from uuid import UUID
 from mem0 import AsyncMemory
 from mem0.configs.base import MemoryConfig
+from typing import Optional
+from datetime import datetime
 import bcrypt
 
 custom_instructions = """You are responsible for deciding what user information should be stored as long-term memory.
@@ -190,11 +192,7 @@ async def login(body: LoginBody):
 
 @app.get("/chats/{user_id}")
 async def get_user_chats(user_id: PydanticObjectId = Path(...)):
-    chats = (
-        await Chat.find(Chat.user_id == user_id)
-        .sort(-Chat.created_at)
-        .to_list()
-    )
+    chats = await Chat.find(Chat.user_id == user_id).sort(-Chat.created_at).to_list()
     return [{"id": str(c.id), "title": c.title} for c in chats]
 
 
@@ -254,7 +252,9 @@ async def chat(body: ChatRequest, request: Request):
 
 @app.get("/get-chat-history/{chat_id}/{user_id}", response_model=list[MessageOut])
 async def get_chat_history(
-    chat_id: UUID = Path(...), user_id: PydanticObjectId = Path(...)
+    chat_id: UUID = Path(...),
+    user_id: PydanticObjectId = Path(...),
+    cursor: Optional[datetime] = Query(None),
 ):
     chat = await Chat.get(chat_id)
     if chat is None:
@@ -264,12 +264,23 @@ async def get_chat_history(
         raise HTTPException(
             status_code=403, detail="This chat doesn't belong to this user"
         )
-
-    messages = (
-        await Message.find(Message.chat_id == chat_id)
-        .sort(Message.created_at)
-        .to_list()
-    )
+    page_size = 10
+    messages = None
+    if cursor is None:
+        messages = (
+            await Message.find(Message.chat_id == chat_id)
+            .sort(-Message.created_at)
+            .limit(page_size)
+            .to_list()
+        )
+    else:
+        messages = (
+            await Message.find(Message.chat_id == chat_id,Message.created_at < cursor)
+            .sort(-Message.created_at)
+            .limit(page_size)
+            .to_list()
+        )
+    messages.reverse()
 
     # Map internal docs -> clean API shape (role lowercased, `message` -> `content`).
     return [
