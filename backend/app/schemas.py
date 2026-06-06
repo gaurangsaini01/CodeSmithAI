@@ -1,12 +1,10 @@
 from datetime import datetime
 from uuid import UUID
-from beanie import PydanticObjectId
 from pydantic import BaseModel, EmailStr
 
 
 class ChatRequest(BaseModel):
     query: str
-    user_id: PydanticObjectId
     chat_id: UUID
 
 

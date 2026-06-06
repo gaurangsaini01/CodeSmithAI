@@ -16,7 +16,7 @@ def recent(messages):
         strategy="last",
         token_counter=count_tokens_approximately,
         start_on="human",
-        # We set system message as false here because we are manually inserting system messages specific to each node in their respective nodes
+        # include_system=False: each node injects its own node-specific system message.
         include_system=False,
     )
 

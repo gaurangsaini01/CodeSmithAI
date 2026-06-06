@@ -30,18 +30,18 @@ export default function Markdown({ content }: { content: string }) {
             href={href}
             target="_blank"
             rel="noreferrer"
-            className="text-violet-600 underline [overflow-wrap:anywhere]"
+            className="text-primary underline [overflow-wrap:anywhere]"
           >
             {children}
           </a>
         ),
         blockquote: ({ children }) => (
-          <blockquote className="my-1.5 border-l-2 border-gray-300 pl-3 text-gray-500">
+          <blockquote className="my-1.5 border-l-2 border-outline-variant pl-3 text-on-surface-variant">
             {children}
           </blockquote>
         ),
         pre: ({ children }) => (
-          <pre className="my-2 max-w-full overflow-x-auto rounded-lg bg-gray-900 p-3 text-xs leading-relaxed text-gray-100">
+          <pre className="my-2 max-w-full overflow-x-auto rounded-lg border border-outline-variant bg-surface-container-highest p-3 font-mono text-[13px] leading-relaxed text-on-surface">
             {children}
           </pre>
         ),
@@ -51,7 +51,7 @@ export default function Markdown({ content }: { content: string }) {
           return isBlock ? (
             <code className={className}>{children}</code>
           ) : (
-            <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] [overflow-wrap:anywhere]">
+            <code className="rounded bg-on-surface/10 px-1 py-0.5 font-mono text-[0.85em] [overflow-wrap:anywhere]">
               {children}
             </code>
           );
@@ -62,12 +62,12 @@ export default function Markdown({ content }: { content: string }) {
           </div>
         ),
         th: ({ children }) => (
-          <th className="border border-gray-300 px-2 py-1 text-left font-semibold">
+          <th className="border border-outline-variant px-2 py-1 text-left font-semibold">
             {children}
           </th>
         ),
         td: ({ children }) => (
-          <td className="border border-gray-300 px-2 py-1">{children}</td>
+          <td className="border border-outline-variant px-2 py-1">{children}</td>
         ),
       }}
     >

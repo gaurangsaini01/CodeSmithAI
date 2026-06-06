@@ -1,5 +1,6 @@
 import type { ChatMessage } from "../services/chatApi";
 import Markdown from "./Markdown";
+import BrandLogo from "./BrandLogo";
 
 type Props = {
   message: ChatMessage;
@@ -8,19 +9,20 @@ type Props = {
 export default function MessageBubble({ message }: Props) {
   const isUser = message.role === "user";
 
-  return (
-    <div
-      className={`min-w-0 max-w-[78%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed [overflow-wrap:anywhere] ${
-        isUser
-          ? "self-end rounded-br-sm bg-violet-600 text-white"
-          : "self-start rounded-bl-sm bg-gray-100 text-gray-800"
-      }`}
-    >
-      {isUser ? (
+  if (isUser) {
+    return (
+      <div className="max-w-[80%] self-end rounded-lg bg-surface-container-high px-4 py-2.5 text-[15px] leading-7 text-on-surface [overflow-wrap:anywhere]">
         <p className="whitespace-pre-wrap">{message.content}</p>
-      ) : (
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex w-full gap-3 self-start md:max-w-[88%]">
+      <BrandLogo className="mt-0.5 h-7 w-7" />
+      <div className="bubble-ai min-w-0 flex-1 text-[15px] leading-7 text-on-surface [overflow-wrap:anywhere]">
         <Markdown content={message.content} />
-      )}
+      </div>
     </div>
   );
 }

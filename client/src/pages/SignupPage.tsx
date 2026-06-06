@@ -56,7 +56,7 @@ export default function SignupPage() {
           Already have an account?{" "}
           <Link
             to="/login"
-            className="font-medium text-violet-600 hover:underline"
+            className="font-medium text-primary hover:underline"
           >
             Log in
           </Link>
@@ -69,7 +69,7 @@ export default function SignupPage() {
         noValidate
       >
         {formError && (
-          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+          <p className="rounded-md bg-error-container px-3 py-2 text-sm text-on-error-container">
             {formError}
           </p>
         )}
@@ -106,7 +106,7 @@ export default function SignupPage() {
         <button
           type="submit"
           disabled={isLoading}
-          className="mt-2 rounded-lg bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60"
+          className="glow-primary mt-2 rounded-md bg-primary px-4 py-2.5 text-sm font-semibold text-on-primary transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isLoading ? "Signing up..." : "Sign up"}
         </button>

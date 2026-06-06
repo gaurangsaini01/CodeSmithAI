@@ -21,7 +21,7 @@ export default function TextField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm font-medium text-gray-700">
+      <label htmlFor={id} className="type-label-md text-on-surface-variant">
         {label}
       </label>
       <div className="relative">
@@ -30,12 +30,12 @@ export default function TextField({
           type={inputType}
           aria-invalid={error ? true : undefined}
           aria-describedby={errorId}
-          className={`w-full rounded-lg border px-3.5 py-2.5 ${
+          className={`w-full rounded-md border bg-surface-container-lowest px-3.5 py-2.5 ${
             isPassword ? "pr-11" : ""
-          } text-sm text-gray-800 outline-none transition focus:ring-2 ${
+          } text-sm text-on-surface outline-none transition placeholder:text-on-surface-variant/60 focus:ring-4 ${
             error
-              ? "border-red-400 focus:border-red-500 focus:ring-red-200"
-              : "border-gray-200 focus:border-violet-500 focus:ring-violet-200"
+              ? "border-error focus:border-error focus:ring-error/15"
+              : "border-outline-variant focus:border-primary focus:ring-primary/15"
           }`}
           {...rest}
         />
@@ -44,7 +44,7 @@ export default function TextField({
             type="button"
             onClick={() => setShow((s) => !s)}
             aria-label={show ? "Hide password" : "Show password"}
-            className="absolute inset-y-0 right-0 flex items-center px-3 text-gray-400 transition hover:text-gray-600"
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-on-surface-variant/70 transition hover:text-on-surface"
           >
             {show ? (
               <svg
@@ -85,7 +85,7 @@ export default function TextField({
         )}
       </div>
       {error && (
-        <p id={errorId} className="text-xs text-red-600">
+        <p id={errorId} className="text-xs text-error">
           {error}
         </p>
       )}

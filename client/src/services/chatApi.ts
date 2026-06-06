@@ -1,7 +1,15 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
+import type {
+  BaseQueryFn,
+  FetchArgs,
+  FetchBaseQueryError,
+} from "@reduxjs/toolkit/query/react";
 import type { Conversation } from "../types";
+import { clearToken, clearUser } from "../store/authSlice";
 
 const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+
+const PAGE_SIZE = 10;
 
 export type ChatMessage = {
   id: string;
@@ -12,7 +20,6 @@ export type ChatMessage = {
 
 export type SendChatRequest = {
   query: string;
-  user_id: string;
   chat_id: string;
 };
 
@@ -20,23 +27,68 @@ export type SendChatResponse = {
   output: string;
 };
 
+const rawBaseQuery = fetchBaseQuery({
+  baseUrl: API_BASE,
+  prepareHeaders: (headers) => {
+    const raw = localStorage.getItem("token");
+    if (raw) {
+      try {
+        const token = JSON.parse(raw);
+        if (token) headers.set("Authorization", `Bearer ${token}`);
+      } catch {
+        /* malformed token in storage */
+      }
+    }
+    return headers;
+  },
+});
+
+// A 401 (missing/expired/invalid token) or 403 (not your resource) signs the
+// user out; clearing the token makes ProtectedRoute redirect to /login.
+const baseQueryWithAuth: BaseQueryFn<
+  string | FetchArgs,
+  unknown,
+  FetchBaseQueryError
+> = async (args, api, extraOptions) => {
+  const result = await rawBaseQuery(args, api, extraOptions);
+  if (
+    result.error &&
+    (result.error.status === 401 || result.error.status === 403)
+  ) {
+    api.dispatch(clearToken());
+    api.dispatch(clearUser());
+    // Defer so the failing request finishes settling before the cache is wiped.
+    setTimeout(() => api.dispatch(chatApi.util.resetApiState()), 0);
+  }
+  return result;
+};
+
 export const chatApi = createApi({
   reducerPath: "chatApi",
-  baseQuery: fetchBaseQuery({ baseUrl: API_BASE }),
+  baseQuery: baseQueryWithAuth,
   tagTypes: ["ChatHistory", "UserChats"],
   endpoints: (builder) => ({
-    getUserChats: builder.query<Conversation[], { userId: string }>({
-      query: ({ userId }) => `/chats/${userId}`,
-      providesTags: (_result, _error, { userId }) => [
-        { type: "UserChats", id: userId },
-      ],
+    getUserChats: builder.query<Conversation[], undefined>({
+      query: () => `/chats`,
+      providesTags: ["UserChats"],
     }),
 
-    getChatHistory: builder.query<
+    getChatHistory: builder.infiniteQuery<
       ChatMessage[],
-      { chatId: string; userId: string }
+      { chatId: string },
+      string | null
     >({
-      query: ({ chatId, userId }) => `/get-chat-history/${chatId}/${userId}`,
+      infiniteQueryOptions: {
+        initialPageParam: null,
+        getNextPageParam: (lastPage) =>
+          lastPage.length < PAGE_SIZE ? undefined : lastPage[0].created_at,
+      },
+      query: ({ queryArg: { chatId }, pageParam }) => {
+        const base = `/get-chat-history/${chatId}`;
+        return pageParam
+          ? `${base}?cursor=${encodeURIComponent(pageParam)}`
+          : base;
+      },
       providesTags: (_result, _error, { chatId }) => [
         { type: "ChatHistory", id: chatId },
       ],
@@ -45,20 +97,14 @@ export const chatApi = createApi({
     sendChat: builder.mutation<SendChatResponse, SendChatRequest>({
       query: (body) => ({ url: "/chat", method: "POST", body }),
 
-      // Optimistically show the user's message immediately. After the request
-      // succeeds, invalidation refetches the real persisted history (user msg
-      // + assistant reply). On failure, the optimistic patch is reverted.
-      async onQueryStarted(
-        { query, user_id, chat_id },
-        { dispatch, queryFulfilled },
-      ) {
+      async onQueryStarted({ query, chat_id }, { dispatch, queryFulfilled }) {
         const patch = dispatch(
           chatApi.util.updateQueryData(
             "getChatHistory",
-            { chatId: chat_id, userId: user_id },
+            { chatId: chat_id },
             (draft) => {
-              draft.push({
-                id: `optimistic-${Date.now()}`,
+              draft.pages[0]?.push({
+                id: `optimistic-user-${Date.now()}`,
                 role: "user",
                 content: query,
                 created_at: new Date().toISOString(),
@@ -67,23 +113,33 @@ export const chatApi = createApi({
           ),
         );
         try {
-          await queryFulfilled;
+          const { data } = await queryFulfilled;
+          dispatch(
+            chatApi.util.updateQueryData(
+              "getChatHistory",
+              { chatId: chat_id },
+              (draft) => {
+                draft.pages[0]?.push({
+                  id: `assistant-${Date.now()}`,
+                  role: "assistant",
+                  content: data.output,
+                  created_at: new Date().toISOString(),
+                });
+              },
+            ),
+          );
         } catch {
           patch.undo();
         }
       },
 
-      // Refresh chat history + sidebar (new chat appears in list after first message).
-      invalidatesTags: (_result, _error, { chat_id, user_id }) => [
-        { type: "ChatHistory", id: chat_id },
-        { type: "UserChats", id: user_id },
-      ],
+      invalidatesTags: ["UserChats"],
     }),
   }),
 });
 
 export const {
   useGetUserChatsQuery,
-  useGetChatHistoryQuery,
+  useGetChatHistoryInfiniteQuery,
   useSendChatMutation,
 } = chatApi;

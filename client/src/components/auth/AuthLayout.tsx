@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import ThemeToggle from "../ThemeToggle";
+import BrandLogo from "../BrandLogo";
 
 type Props = {
   title: string;
@@ -14,17 +16,29 @@ export default function AuthLayout({
   footer,
 }: Props) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-violet-100 via-white to-gray-100 p-4">
-      <div className="w-full max-w-md rounded-2xl border border-gray-100 bg-white p-8 shadow-xl">
-        <div className="mb-7 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-600 text-lg font-bold text-white">
-            C
-          </div>
-          <h1 className="text-2xl font-bold text-gray-800">{title}</h1>
-          <p className="mt-1 text-sm text-gray-500">{subtitle}</p>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background p-4">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-40 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full bg-primary opacity-10 blur-[120px] dark:opacity-25"
+      />
+
+      <ThemeToggle className="absolute right-5 top-5 z-10" />
+
+      <div className="glass relative z-10 w-full max-w-md rounded-xl p-8">
+        <div className="mb-8 text-center">
+          <BrandLogo className="glow-primary mx-auto mb-3 h-12 w-12" />
+          <p className="mb-4 type-label-md text-on-surface-variant">
+            Halo · Your intelligent halo
+          </p>
+          <h1 className="type-headline-md text-on-surface">{title}</h1>
+          <p className="mt-1.5 type-body-md text-on-surface-variant">
+            {subtitle}
+          </p>
         </div>
         {children}
-        <div className="mt-6 text-center text-sm text-gray-500">{footer}</div>
+        <div className="mt-7 text-center text-sm text-on-surface-variant">
+          {footer}
+        </div>
       </div>
     </div>
   );
