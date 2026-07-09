@@ -36,20 +36,32 @@ def query_classifier(state: ResponseState):
     llm = classifier_client.with_structured_output(QueryType)
     res = llm.invoke(
         [
-            SystemMessage(
-                content="""
+            SystemMessage(content="""
                 Classify the user query.
 
                 Return ONLY one of:
                 - General
                 - Coding
-                """
-            ),
+                """),
             *state.get("messages", [])[-2:],
         ]
     )
 
     return {"query_type": res.query_type}
+
+
+def check_query_type(state: ResponseState):
+    if state["query_type"] == "Coding":
+        return "CodingNode"
+
+    return "GeneralNode"
+
+
+def check_coding_type(state: ResponseState):
+    if state["coding_type"] == "Fix":
+        return "FixNode"
+
+    return "OptimizeNode"
 
 
 def general_node(state: ResponseState, config):
@@ -70,8 +82,7 @@ def coding_node(state: ResponseState):
 
     res = llm.invoke(
         [
-            SystemMessage(
-                content="""
+            SystemMessage(content="""
                 You are a coding expert.
 
                 Classify coding requests into:
@@ -84,8 +95,7 @@ def coding_node(state: ResponseState):
                   (performance improvements,
                    code quality, refactoring,
                    best practices)
-                """
-            ),
+                """),
             *state.get("messages", [])[-2:],
         ]
     )
@@ -143,17 +153,3 @@ def optimize_node(state: ResponseState, config):
     )
 
     return {"final_response": res.content, "messages": [res]}
-
-
-def check_query_type(state: ResponseState):
-    if state["query_type"] == "Coding":
-        return "CodingNode"
-
-    return "GeneralNode"
-
-
-def check_coding_type(state: ResponseState):
-    if state["coding_type"] == "Fix":
-        return "FixNode"
-
-    return "OptimizeNode"
