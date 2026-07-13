@@ -1,0 +1,18 @@
+services:
+  frontend:
+    build: ./client
+    ports:
+      - 5180:5180
+    volumes:
+      - ./client:/client
+      - /client/node_modules
+
+  backend:
+    build: ./backend
+    ports:
+      - 8000:8000
+    volumes:
+      - ./backend:/backend
+      - /backend/.venv
+    env_file:
+      - ./backend/.env

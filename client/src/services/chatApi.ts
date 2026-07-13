@@ -21,6 +21,7 @@ export type ChatMessage = {
 export type SendChatRequest = {
   query: string;
   chat_id: string;
+  file?: File;
 };
 
 export type SendChatResponse = {
@@ -95,9 +96,19 @@ export const chatApi = createApi({
     }),
 
     sendChat: builder.mutation<SendChatResponse, SendChatRequest>({
-      query: (body) => ({ url: "/chat", method: "POST", body }),
+      query: ({ query, chat_id, file }) => {
+        const body = new FormData();
+        body.append("query", query);
+        body.append("chat_id", chat_id);
+        if (file) body.append("file", file);
 
-      async onQueryStarted({ query, chat_id }, { dispatch, queryFulfilled }) {
+        return { url: "/chat", method: "POST", body };
+      },
+
+      async onQueryStarted(
+        { query, chat_id, file },
+        { dispatch, queryFulfilled },
+      ) {
         const patch = dispatch(
           chatApi.util.updateQueryData(
             "getChatHistory",
@@ -106,7 +117,7 @@ export const chatApi = createApi({
               draft.pages[0]?.push({
                 id: `optimistic-user-${Date.now()}`,
                 role: "user",
-                content: query,
+                content: file ? `${query}\n\nAttached: ${file.name}`.trim() : query,
                 created_at: new Date().toISOString(),
               });
             },
