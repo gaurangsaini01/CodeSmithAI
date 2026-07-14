@@ -9,16 +9,22 @@ from fastapi import (
     Query,
     Header,
     Depends,
+    Form,
+    File,
+    UploadFile,
 )
+from app.utils.utils import save_pdf
+import shutil
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.mongodb import MongoDBSaver
 from beanie import init_beanie, PydanticObjectId
 from app.config import settings
 from app.graph import build_graph
-from app.schemas import ChatRequest, ChatResponse, MessageOut, SignupBody, LoginBody
+from app.schemas import ChatResponse, MessageOut, SignupBody, LoginBody
 from app.models import ModelsList, Message, Chat, User
 from app.constants import ROLES
+import uuid
 from uuid import UUID
 from mem0 import AsyncMemory
 from mem0.configs.base import MemoryConfig
@@ -26,6 +32,8 @@ from typing import Optional
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
+import pathlib
+import asyncio
 
 custom_instructions = """You are responsible for deciding what user information should be stored as long-term memory.
 
@@ -246,49 +254,61 @@ async def get_user_chats(user=Depends(verify_token)):
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat(body: ChatRequest, request: Request, user=Depends(verify_token)):
+async def chat(
+    query: str = Form(...),
+    chat_id: UUID = Form(...),
+    file: UploadFile | None = File(None),
+    request: Request = None,
+    user=Depends(verify_token),
+):
     graph = request.app.state.graph
     memory = request.app.state.memory
-    user_query = body.query
-    chat_exist = await Chat.get(body.chat_id)
+
+    chat_exist = await Chat.get(chat_id)
     if not chat_exist:
-        await Chat(id=body.chat_id, user_id=user["id"], title=user_query[:20]).insert()
+        await Chat(id=chat_id, user_id=user["id"], title=query[:20]).insert()
     chat_belongs_to_user = await Chat.find_one(
-        Chat.id == body.chat_id, Chat.user_id == user["id"]
+        Chat.id == chat_id, Chat.user_id == user["id"]
     )
     if not chat_belongs_to_user:
         raise HTTPException(
             status_code=403, detail="This conversation id doesn't belong to this user"
         )
+    if file:
+        folder = pathlib.Path("uploads")
+        folder = folder / str(user["id"])
+        folder.mkdir(parents=True, exist_ok=True)
+        new_file_name = f"{uuid.uuid4()}.pdf"
+        file_path = folder / new_file_name
+        await asyncio.to_thread(save_pdf, file.file, file_path)
+
     await Message(
-        chat_id=body.chat_id,
+        chat_id=chat_id,
         user_id=user["id"],
-        message=user_query,
+        message=query,
         role=ROLES["user"],
     ).insert()
 
-    memories = await memory.search(
-        user_query, filters={"user_id": str(user["id"])}, top_k=5
-    )
+    memories = await memory.search(query, filters={"user_id": str(user["id"])}, top_k=5)
     relevantMemories = [m["memory"] for m in memories.get("results", [])]
     memory_block = "\n".join(f"- {m}" for m in relevantMemories)
     print("\n RelevantSearches : ", relevantMemories)
     result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=user_query)]},
+        {"messages": [HumanMessage(content=query)]},
         config={
             "configurable": {
-                "thread_id": str(body.chat_id),
+                "thread_id": str(chat_id),
                 "memory_context": memory_block,
             }
         },
     )
     ai_response = result["final_response"]
     result = await memory.add(
-        [{"role": "user", "content": user_query}], user_id=str(user["id"])
+        [{"role": "user", "content": query}], user_id=str(user["id"])
     )
     print("\n Memories Added : ", result)
     await Message(
-        chat_id=body.chat_id,
+        chat_id=chat_id,
         user_id=user["id"],
         message=ai_response,
         role=ROLES["ai"],

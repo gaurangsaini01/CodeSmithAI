@@ -56,4 +56,12 @@ class User(TimestampedDocument):
         name = "users"
 
 
-ModelsList = [Chat, Message, User]
+class UserDocument(TimestampedDocument):
+    original_name: str
+    name: str
+    user_id: PydanticObjectId
+    chat_id: UUID
+    status: str
+    uploaded_at: str
+
+ModelsList = [Chat, Message, User, UserDocument]

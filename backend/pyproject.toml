@@ -24,4 +24,6 @@ dependencies = [
     "qdrant-client==1.18.0",
     "uvicorn[standard]==0.48.0",
     "fastembed>=0.8.0",
+    "python-multipart>=0.0.32",
+    "arq>=0.28.0",
 ]

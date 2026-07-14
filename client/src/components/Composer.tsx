@@ -39,6 +39,7 @@ export default function Composer({ value, onChange, onSend, disabled }: Props) {
           <input
             ref={fileInputRef}
             type="file"
+            accept=".pdf"
             className="sr-only"
             onChange={handleFileChange}
           />

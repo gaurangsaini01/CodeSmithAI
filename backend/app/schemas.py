@@ -3,10 +3,6 @@ from uuid import UUID
 from pydantic import BaseModel, EmailStr
 
 
-class ChatRequest(BaseModel):
-    query: str
-    chat_id: UUID
-
 
 class ChatResponse(BaseModel):
     output: str
