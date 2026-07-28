@@ -3,7 +3,7 @@ from langchain_core.messages import SystemMessage
 from langchain_core.messages.utils import trim_messages, count_tokens_approximately
 
 from app.config import settings
-from app.graph.state import CodingType, QueryType, ResponseState
+from app.graph.state import QueryClassification, ResponseState
 
 client = init_chat_model(settings.chat_model)
 classifier_client = init_chat_model(settings.classifier_model)
@@ -31,61 +31,25 @@ def system_with_memory(persona: str, config) -> SystemMessage:
     return SystemMessage(content=content)
 
 
-def query_classifier(state: ResponseState):
-    """Decide whether the query is coding-related or general chat."""
-    llm = classifier_client.with_structured_output(QueryType)
-    res = llm.invoke(
+async def query_classifier(state: ResponseState):
+    """Decide general vs coding, and the coding intent, in one call."""
+    llm = classifier_client.with_structured_output(QueryClassification)
+    res = await llm.ainvoke(
         [
             SystemMessage(content="""
                 Classify the user query.
 
-                Return ONLY one of:
+                query_type:
                 - General
+                  (normal chat, questions, anything not about code)
+
                 - Coding
-                """),
-            *state.get("messages", [])[-2:],
-        ]
-    )
+                  (bug fixing, debugging, errors, exceptions,
+                   correcting code, performance improvements,
+                   code quality, refactoring, best practices)
 
-    return {"query_type": res.query_type}
-
-
-def check_query_type(state: ResponseState):
-    if state["query_type"] == "Coding":
-        return "CodingNode"
-
-    return "GeneralNode"
-
-
-def check_coding_type(state: ResponseState):
-    if state["coding_type"] == "Fix":
-        return "FixNode"
-
-    return "OptimizeNode"
-
-
-def general_node(state: ResponseState, config):
-    """Handle normal chat."""
-    res = client.invoke(
-        [
-            system_with_memory("You are a helpful AI assistant.", config),
-            *recent(state["messages"]),
-        ]
-    )
-
-    return {"final_response": res.content, "messages": [res]}
-
-
-def coding_node(state: ResponseState):
-    """Detect coding intent: Fix or Optimize."""
-    llm = classifier_client.with_structured_output(CodingType)
-
-    res = llm.invoke(
-        [
-            SystemMessage(content="""
-                You are a coding expert.
-
-                Classify coding requests into:
+                coding_type: set this ONLY when query_type is Coding,
+                otherwise leave it null.
 
                 - Fix
                   (bug fixing, debugging, errors,
@@ -100,12 +64,31 @@ def coding_node(state: ResponseState):
         ]
     )
 
-    return {"coding_type": res.coding_type}
+    return {"query_type": res.query_type, "coding_type": res.coding_type}
 
 
-def fix_node(state: ResponseState, config):
+def route_query(state: ResponseState):
+    if state["query_type"] != "Coding":
+        return "GeneralNode"
+
+    return "FixNode" if state["coding_type"] == "Fix" else "OptimizeNode"
+
+
+async def general_node(state: ResponseState, config):
+    """Handle normal chat."""
+    res = await client.ainvoke(
+        [
+            system_with_memory("You are a helpful AI assistant.", config),
+            *recent(state["messages"]),
+        ]
+    )
+
+    return {"final_response": res.content, "messages": [res]}
+
+
+async def fix_node(state: ResponseState, config):
     """Debugging agent."""
-    res = client.invoke(
+    res = await client.ainvoke(
         [
             system_with_memory(
                 """
@@ -127,9 +110,9 @@ def fix_node(state: ResponseState, config):
     return {"final_response": res.content, "messages": [res]}
 
 
-def optimize_node(state: ResponseState, config):
+async def optimize_node(state: ResponseState, config):
     """Optimization agent."""
-    res = client.invoke(
+    res = await client.ainvoke(
         [
             system_with_memory(
                 """

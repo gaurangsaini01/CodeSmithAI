@@ -14,7 +14,6 @@ from fastapi import (
     UploadFile,
 )
 from app.utils.utils import save_pdf
-import shutil
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -26,124 +25,25 @@ from app.models import ModelsList, Message, Chat, User
 from app.constants import ROLES
 import uuid
 from uuid import UUID
-from mem0 import AsyncMemory
-from mem0.configs.base import MemoryConfig
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
 import pathlib
 import asyncio
-
-custom_instructions = """You are responsible for deciding what user information should be stored as long-term memory.
-
-GOAL:
-Store information that can improve future conversations and personalization.
-
-STORE:
-
-1. User preferences
-Examples:
-- Preferred learning style
-- Communication style
-- Tool preferences
-- Programming language preferences
-
-2. User background
-Examples:
-- Profession
-- Education
-- Experience level
-- Technical stack
-
-3. User skills
-Examples:
-- MERN developer
-- Python developer
-- FastAPI experience
-- React experience
-
-4. Long-term goals
-Examples:
-- Wants to become an AI Engineer
-- Preparing for software engineering interviews
-- Wants to improve DSA
-
-5. Ongoing projects
-Examples:
-- Building an AI chatbot
-- Developing a SaaS product
-- Working on a LangGraph application
-
-6. Recurring constraints
-Examples:
-- Limited study time
-- Budget constraints
-- Hardware limitations
-
-7. Stable interests
-Examples:
-- AI
-- Backend engineering
-- System design
-- Powerlifting
-
-DO NOT STORE:
-
-- One-time questions
-- Temporary debugging issues
-- Single conversation details
-- Random facts
-- Speculation
-- Hypothetical statements
-- Assistant assumptions
-- Sensitive personal information
-- Passwords
-- API keys
-- Financial information
-- Medical information
-
-MEMORY QUALITY RULES:
-
-- Prefer storing useful memories rather than missing important information.
-- If uncertain but likely useful in future conversations, store it.
-- Do not require perfect certainty.
-- Medium confidence memories are allowed.
-- Avoid duplicates.
-- Update existing memories when newer information replaces older information.
-
-OUTPUT:
-Return structured memories only."""
+from arq import create_pool, ArqRedis
+from arq.connections import RedisSettings
+from app.memory import get_memory
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # redis and arq setup
+    redis = await create_pool(RedisSettings())
+    app.state.redis = redis
     # Beanie Setup
     beanie_client = AsyncMongoClient(settings.mongo_db_uri)
-    # Mem0 Config
-    config = MemoryConfig(
-        vector_store={
-            "provider": "qdrant",
-            "config": {
-                "collection_name": "chatapp",
-                "url": settings.qdrant_url,
-                "api_key": settings.qdrant_api_key,
-            },
-        },
-        llm={
-            "provider": "openai",
-            "config": {
-                "model": "gpt-4o",
-                "temperature": 0.2,
-                "max_tokens": 2000,
-            },
-        },
-        embedder={
-            "provider": "openai",
-            "config": {"model": "text-embedding-3-small"},
-        },
-        custom_instructions=custom_instructions,
-    )
+
     await init_beanie(
         database=beanie_client[settings.mongo_db_name], document_models=ModelsList
     )
@@ -151,7 +51,7 @@ async def lifespan(app: FastAPI):
     mongo_client = MongoClient(settings.mongo_db_uri)
     checkpointer = MongoDBSaver(mongo_client, db_name=settings.mongo_db_name)
     app.state.graph = build_graph(checkpointer)
-    memory = AsyncMemory(config=config)
+    memory = get_memory()
     app.state.memory = memory
     try:
         yield
@@ -264,13 +164,10 @@ async def chat(
     graph = request.app.state.graph
     memory = request.app.state.memory
 
-    chat_exist = await Chat.get(chat_id)
-    if not chat_exist:
+    chat = await Chat.get(chat_id)
+    if chat is None:
         await Chat(id=chat_id, user_id=user["id"], title=query[:20]).insert()
-    chat_belongs_to_user = await Chat.find_one(
-        Chat.id == chat_id, Chat.user_id == user["id"]
-    )
-    if not chat_belongs_to_user:
+    elif chat.user_id != user["id"]:
         raise HTTPException(
             status_code=403, detail="This conversation id doesn't belong to this user"
         )
@@ -303,9 +200,12 @@ async def chat(
         },
     )
     ai_response = result["final_response"]
-    result = await memory.add(
-        [{"role": "user", "content": query}], user_id=str(user["id"])
-    )
+    redis: ArqRedis = request.app.state.redis
+    jobenqres = await redis.enqueue_job("add_memory", query, str(user["id"]))
+    print(jobenqres)
+    # result = await memory.add(
+    #     [{"role": "user", "content": query}], user_id=str(user["id"])
+    # )
     print("\n Memories Added : ", result)
     await Message(
         chat_id=chat_id,
