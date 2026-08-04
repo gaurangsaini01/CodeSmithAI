@@ -22,12 +22,21 @@ def recent(messages):
 
 
 def system_with_memory(persona: str, config) -> SystemMessage:
-    memory = (config or {}).get("configurable", {}).get("memory_context", "")
-    content = (
-        persona
-        if not memory
-        else f"{persona}\n\nWhat you already know about the user:\n{memory}"
-    )
+    configurable = (config or {}).get("configurable", {})
+    memory = configurable.get("memory_context", "")
+    documents = configurable.get("document_context", "")
+
+    content = persona
+    if memory:
+        content += f"\n\nWhat you already know about the user:\n{memory}"
+    if documents:
+        content += (
+            "\n\nExcerpts from documents the user attached to this conversation. "
+            "Answer from these when the question is about the document, cite the "
+            "page like (Page 4), and say so plainly if the answer isn't in them "
+            "rather than guessing.\n\n"
+            f"{documents}"
+        )
     return SystemMessage(content=content)
 
 

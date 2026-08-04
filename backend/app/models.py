@@ -57,11 +57,22 @@ class User(TimestampedDocument):
 
 
 class UserDocument(TimestampedDocument):
+    id: UUID
     original_name: str
-    name: str
+    stored_name: str
     user_id: PydanticObjectId
-    chat_id: UUID
+    # Stays None until the user actually sends a message with this document
+    # attached; retrieval only ever sees documents that have a chat_id.
+    chat_id: UUID | None = None
     status: str
-    uploaded_at: str
+    size_bytes: int = 0
+    page_count: int | None = None
+    chunk_count: int | None = None
+    error: str | None = None
+
+    class Settings:
+        name = "user_documents"
+        indexes = ["user_id", "chat_id", "status"]
+
 
 ModelsList = [Chat, Message, User, UserDocument]

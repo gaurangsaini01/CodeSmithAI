@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     classifier_model: str = "openai:gpt-5.4-nano"
     qdrant_url: str
     qdrant_api_key: str
+    # mem0 owns the "chatapp" collection; document chunks live separately.
+    qdrant_documents_collection: str = "documents"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = 1536
+
+    upload_dir: Path = BASE_DIR / "uploads"
+    max_upload_bytes: int = 20 * 1024 * 1024
+    max_pdf_pages: int = 500
+    chunk_size: int = 1000
+    chunk_overlap: int = 150
+    retrieval_top_k: int = 6
     cors_origins: list[str] = [
         "http://localhost:5173",
         "http://localhost:5180",

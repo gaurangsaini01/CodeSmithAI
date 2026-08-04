@@ -1,27 +1,27 @@
-from fastapi import APIRouter
+import asyncio
+from datetime import datetime
+from typing import Optional
+from uuid import UUID
+
+from arq import ArqRedis
 from fastapi import (
-    Request,
+    APIRouter,
+    Depends,
+    Form,
     HTTPException,
     Path,
     Query,
-    Depends,
-    Form,
-    File,
-    UploadFile,
+    Request,
 )
-from app.utils.utils import save_pdf
 from langchain_core.messages import HumanMessage
-from app.schemas import ChatResponse, MessageOut
-from app.models import  Message, Chat
-from app.constants import ROLES
-import uuid
-from uuid import UUID
-from typing import Optional
-from datetime import datetime
-import pathlib
-import asyncio
-from arq import  ArqRedis
+
+from app.config import settings
+from app.constants import DOC_STATUS, ROLES
 from app.dependencies.auth import verify_token
+from app.models import Chat, Message, UserDocument
+from app.schemas import ChatResponse, MessageOut
+from app.vectorstore import search_chunks
+
 router = APIRouter()
 
 
@@ -29,67 +29,6 @@ router = APIRouter()
 async def get_user_chats(user=Depends(verify_token)):
     chats = await Chat.find(Chat.user_id == user["id"]).sort(-Chat.created_at).to_list()
     return [{"id": str(c.id), "title": c.title} for c in chats]
-
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat(
-    query: str = Form(...),
-    chat_id: UUID = Form(...),
-    file: UploadFile | None = File(None),
-    request: Request = None,
-    user=Depends(verify_token),
-):
-    graph = request.app.state.graph
-    memory = request.app.state.memory
-
-    chat = await Chat.get(chat_id)
-    if chat is None:
-        await Chat(id=chat_id, user_id=user["id"], title=query[:20]).insert()
-    elif chat.user_id != user["id"]:
-        raise HTTPException(
-            status_code=403, detail="This conversation id doesn't belong to this user"
-        )
-    if file:
-        folder = pathlib.Path("uploads")
-        folder = folder / str(user["id"])
-        folder.mkdir(parents=True, exist_ok=True)
-        new_file_name = f"{uuid.uuid4()}.pdf"
-        file_path = folder / new_file_name
-        await asyncio.to_thread(save_pdf, file.file, file_path)
-
-    await Message(
-        chat_id=chat_id,
-        user_id=user["id"],
-        message=query,
-        role=ROLES["user"],
-    ).insert()
-
-    memories = await memory.search(query, filters={"user_id": str(user["id"])}, top_k=5)
-    relevantMemories = [m["memory"] for m in memories.get("results", [])]
-    memory_block = "\n".join(f"- {m}" for m in relevantMemories)
-    print("\n RelevantSearches : ", relevantMemories)
-    result = await graph.ainvoke(
-        {"messages": [HumanMessage(content=query)]},
-        config={
-            "configurable": {
-                "thread_id": str(chat_id),
-                "memory_context": memory_block,
-            }
-        },
-    )
-    ai_response = result["final_response"]
-    redis: ArqRedis = request.app.state.redis
-    jobenqres = await redis.enqueue_job("add_memory", query, str(user["id"]))
-    print(jobenqres)
-    print("\n Memories Added : ", result)
-    await Message(
-        chat_id=chat_id,
-        user_id=user["id"],
-        message=ai_response,
-        role=ROLES["ai"],
-    ).insert()
-
-    return ChatResponse(output=ai_response)
 
 
 @router.get(
@@ -137,3 +76,113 @@ async def get_chat_history(
         )
         for message in messages
     ]
+
+
+async def _attach_document(document_id: UUID, chat_id: UUID, user) -> None:
+    """Bind an already-ingested document to this conversation. Until this runs
+    the document is invisible to retrieval, which is what makes a cancelled
+    upload harmless."""
+    doc = await UserDocument.get(document_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if doc.user_id != user["id"]:
+        raise HTTPException(
+            status_code=403, detail="This document doesn't belong to this user"
+        )
+    if doc.chat_id is None:
+        await doc.set({UserDocument.chat_id: chat_id})
+    elif doc.chat_id != chat_id:
+        raise HTTPException(
+            status_code=409, detail="This document is attached to another conversation"
+        )
+
+
+async def _memory_context(memory, query: str, user_id: str) -> str:
+    memories = await memory.search(query, filters={"user_id": user_id}, top_k=5)
+    return "\n".join(f"- {m['memory']}" for m in memories.get("results", []))
+
+
+async def _document_context(request: Request, query: str, chat_id: UUID, user) -> str:
+    docs = await UserDocument.find(
+        UserDocument.user_id == user["id"],
+        UserDocument.chat_id == chat_id,
+        UserDocument.status == DOC_STATUS["ready"],
+    ).to_list()
+    if not docs:
+        return ""
+
+    embeddings = request.app.state.embeddings
+    vector = await embeddings.aembed_query(query)
+    payloads = await search_chunks(
+        request.app.state.qdrant,
+        query_vector=vector,
+        user_id=str(user["id"]),
+        document_ids=[d.id for d in docs],
+        limit=settings.retrieval_top_k,
+    )
+
+    names = {str(d.id): d.original_name for d in docs}
+    return "\n\n".join(
+        f"[{names.get(p['document_id'], 'document')} p.{p['page']}]\n{p['text']}"
+        for p in payloads
+    )
+
+
+@router.post("/chat", response_model=ChatResponse)
+async def chat(
+    request: Request,
+    query: str = Form(...),
+    chat_id: UUID = Form(...),
+    document_id: UUID | None = Form(None),
+    user=Depends(verify_token),
+):
+    graph = request.app.state.graph
+    memory = request.app.state.memory
+
+    chat = await Chat.get(chat_id)
+    if chat is None:
+        await Chat(id=chat_id, user_id=user["id"], title=query[:20]).insert()
+    elif chat.user_id != user["id"]:
+        raise HTTPException(
+            status_code=403, detail="This conversation id doesn't belong to this user"
+        )
+
+    if document_id is not None:
+        await _attach_document(document_id, chat_id, user)
+
+    await Message(
+        chat_id=chat_id,
+        user_id=user["id"],
+        message=query,
+        role=ROLES["user"],
+    ).insert()
+
+   
+    memory_block, document_block = await asyncio.gather(
+        _memory_context(memory, query, str(user["id"])),
+        _document_context(request, query, chat_id, user),
+    )
+
+    result = await graph.ainvoke(
+        {"messages": [HumanMessage(content=query)]},
+        config={
+            "configurable": {
+                "thread_id": str(chat_id),
+                "memory_context": memory_block,
+                "document_context": document_block,
+            }
+        },
+    )
+    ai_response = result["final_response"]
+
+    redis: ArqRedis = request.app.state.redis
+    await redis.enqueue_job("add_memory", query, str(user["id"]))
+
+    await Message(
+        chat_id=chat_id,
+        user_id=user["id"],
+        message=ai_response,
+        role=ROLES["ai"],
+    ).insert()
+
+    return ChatResponse(output=ai_response)

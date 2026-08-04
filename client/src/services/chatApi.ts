@@ -21,12 +21,116 @@ export type ChatMessage = {
 export type SendChatRequest = {
   query: string;
   chat_id: string;
-  file?: File;
+  documentId?: string;
+  attachmentName?: string;
 };
 
 export type SendChatResponse = {
   output: string;
 };
+
+export type DocumentStatus =
+  | "uploaded"
+  | "parsing"
+  | "embedding"
+  | "ready"
+  | "failed"
+  | "cancelled";
+
+export type UserDocument = {
+  id: string;
+  original_name: string;
+  status: DocumentStatus;
+  page_count: number | null;
+  chunk_count: number | null;
+  error: string | null;
+  created_at: string;
+};
+
+export type SendDocumentRequest = {
+  file: File;
+  documentId: string;
+};
+
+// fetch() cannot report upload progress, so the upload uses XMLHttpRequest and
+// pushes progress to whoever registered a handler for that document id. The
+// handler is kept out of the mutation argument so Redux never sees a function
+// inside a dispatched action.
+const uploadProgressHandlers = new Map<string, (fraction: number) => void>();
+
+export function setUploadProgressHandler(
+  documentId: string,
+  handler: ((fraction: number) => void) | undefined,
+) {
+  if (handler) {
+    uploadProgressHandlers.set(documentId, handler);
+  } else {
+    uploadProgressHandlers.delete(documentId);
+  }
+}
+
+function readStoredToken(): string | null {
+  const raw = localStorage.getItem("token");
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function parseJsonOrNull(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+type UploadResult = { data: UserDocument } | { error: FetchBaseQueryError };
+
+function uploadWithProgress(
+  file: File,
+  documentId: string,
+): Promise<UploadResult> {
+  return new Promise((resolve) => {
+    const body = new FormData();
+    body.append("document_id", documentId);
+    body.append("file", file);
+
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}/document`);
+
+    const token = readStoredToken();
+    if (token) {
+      request.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    request.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const handler = uploadProgressHandlers.get(documentId);
+      if (handler) handler(event.loaded / event.total);
+    };
+
+    request.onload = () => {
+      const parsed = parseJsonOrNull(request.responseText);
+
+      if (request.status >= 200 && request.status < 300) {
+        resolve({ data: parsed as UserDocument });
+      } else {
+        resolve({ error: { status: request.status, data: parsed } });
+      }
+    };
+
+    request.onerror = () => {
+      resolve({
+        error: { status: "FETCH_ERROR", error: "Could not reach the server." },
+      });
+    };
+
+    request.send(body);
+  });
+}
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: API_BASE,
@@ -67,7 +171,7 @@ const baseQueryWithAuth: BaseQueryFn<
 export const chatApi = createApi({
   reducerPath: "chatApi",
   baseQuery: baseQueryWithAuth,
-  tagTypes: ["ChatHistory", "UserChats"],
+  tagTypes: ["ChatHistory", "UserChats", "Documents"],
   endpoints: (builder) => ({
     getUserChats: builder.query<Conversation[], undefined>({
       query: () => `/chats`,
@@ -96,17 +200,17 @@ export const chatApi = createApi({
     }),
 
     sendChat: builder.mutation<SendChatResponse, SendChatRequest>({
-      query: ({ query, chat_id, file }) => {
+      query: ({ query, chat_id, documentId }) => {
         const body = new FormData();
         body.append("query", query);
         body.append("chat_id", chat_id);
-        if (file) body.append("file", file);
+        if (documentId) body.append("document_id", documentId);
 
         return { url: "/chat", method: "POST", body };
       },
 
       async onQueryStarted(
-        { query, chat_id, file },
+        { query, chat_id, attachmentName },
         { dispatch, queryFulfilled },
       ) {
         const patch = dispatch(
@@ -117,7 +221,9 @@ export const chatApi = createApi({
               draft.pages[0]?.push({
                 id: `optimistic-user-${Date.now()}`,
                 role: "user",
-                content: file ? `${query}\n\nAttached: ${file.name}`.trim() : query,
+                content: attachmentName
+                  ? `${query}\n\nAttached: ${attachmentName}`.trim()
+                  : query,
                 created_at: new Date().toISOString(),
               });
             },
@@ -146,6 +252,39 @@ export const chatApi = createApi({
 
       invalidatesTags: ["UserChats"],
     }),
+    sendDocument: builder.mutation<UserDocument, SendDocumentRequest>({
+      async queryFn({ file, documentId }, api) {
+        const result = await uploadWithProgress(file, documentId);
+
+        // queryFn bypasses baseQueryWithAuth, so the sign-out on an expired
+        // token has to be repeated here.
+        if ("error" in result) {
+          const status = result.error.status;
+          if (status === 401 || status === 403) {
+            api.dispatch(clearToken());
+            api.dispatch(clearUser());
+          }
+        }
+        return result;
+      },
+      invalidatesTags: ["Documents"],
+    }),
+    getDocumentStatus: builder.query<UserDocument, string>({
+      query: (documentId) => `/document/${documentId}`,
+      providesTags: (_result, _error, documentId) => [
+        { type: "Documents", id: documentId },
+      ],
+    }),
+    deleteDocument: builder.mutation<void, string>({
+      query: (documentId) => ({
+        url: `/document/${documentId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: (_result, _error, documentId) => [
+        { type: "Documents", id: documentId },
+        "Documents",
+      ],
+    }),
   }),
 });
 
@@ -153,4 +292,7 @@ export const {
   useGetUserChatsQuery,
   useGetChatHistoryInfiniteQuery,
   useSendChatMutation,
+  useGetDocumentStatusQuery,
+  useDeleteDocumentMutation,
+  useSendDocumentMutation,
 } = chatApi;

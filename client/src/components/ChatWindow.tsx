@@ -44,9 +44,18 @@ export default function ChatWindow({
   const [sendChat, { isLoading: isSending }] = useSendChatMutation();
   const [draft, setDraft] = useState("");
 
-  async function handleSend(text: string, file?: File) {
+  async function handleSend(
+    text: string,
+    documentId?: string,
+    attachmentName?: string,
+  ) {
     try {
-      await sendChat({ query: text, chat_id: chatId, file }).unwrap();
+      await sendChat({
+        query: text,
+        chat_id: chatId,
+        documentId,
+        attachmentName,
+      }).unwrap();
     } catch {
       // Errors surface via RTK state; the optimistic patch self-reverts.
     }
