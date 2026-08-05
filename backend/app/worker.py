@@ -31,7 +31,7 @@ async def shutdown(ctx):
 
 class WorkerSettings:
     functions = [add_memory, ingest_document]
-    redis_settings = RedisSettings()
+    redis_settings = RedisSettings(host=settings.redis_host)
     on_startup = startup
     on_shutdown = shutdown
     allow_abort_jobs = True

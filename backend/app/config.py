@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     secret_key: str
     refresh_secret_key: str
     algorithm: str
+    redis_host: str = "redis"
 
 
 settings = Settings()

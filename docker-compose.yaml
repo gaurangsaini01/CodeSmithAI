@@ -6,11 +6,23 @@ services:
     volumes:
       - ./client:/client
       - /client/node_modules
-
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+  worker:
+    build: ./backend
+    command: uv run arq app.worker.WorkerSettings
+    depends_on:
+      - redis
+    env_file:
+      - ./backend/.env
   backend:
     build: ./backend
     ports:
       - 8000:8000
+    depends_on:
+      - redis
     volumes:
       - ./backend:/backend
       - /backend/.venv

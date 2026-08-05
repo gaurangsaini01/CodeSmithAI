@@ -17,7 +17,7 @@ from app.vectorstore import ensure_collection, get_embeddings, get_qdrant
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # redis and arq setup
-    redis = await create_pool(RedisSettings())
+    redis = await create_pool(RedisSettings(host=settings.redis_host))
     app.state.redis = redis
     # Beanie Setup
     beanie_client = AsyncMongoClient(settings.mongo_db_uri)
