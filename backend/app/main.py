@@ -64,3 +64,4 @@ app.include_router(documents.router)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+ 
