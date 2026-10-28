@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 import pymupdf
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Below this much extracted text we treat the PDF as having no text layer at
 # all, rather than embedding whitespace and silently returning nothing later.
@@ -31,6 +34,13 @@ def extract_pages(path: Path) -> tuple[list[tuple[int, str]], int]:
     try:
         doc = pymupdf.open(path)
     except Exception as exc:
+        # Decide after the failure (not before) so there is no check-then-open
+        # race. The real path goes to the server log only, never to the user.
+        if not path.exists():
+            logger.error("Uploaded file is missing on disk: %s", path)
+            raise PdfError(
+                "The uploaded file could not be found. Please upload it again."
+            ) from exc
         raise PdfError("This file could not be opened as a PDF.") from exc
 
     try:

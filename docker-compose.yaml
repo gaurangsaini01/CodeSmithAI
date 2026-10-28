@@ -1,11 +1,13 @@
 services:
   frontend:
-    build: ./client
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: "http://localhost:80/api"
     ports:
-      - 5180:5180
-    volumes:
-      - ./client:/client
-      - /client/node_modules
+      - 80:80
+    depends_on:
+      - backend
   redis:
     image: redis
     ports:
@@ -13,18 +15,19 @@ services:
   worker:
     build: ./backend
     command: uv run arq app.worker.WorkerSettings
+    volumes:
+      - documents:/backend/uploads
     depends_on:
       - redis
     env_file:
       - ./backend/.env
   backend:
     build: ./backend
-    ports:
-      - 8000:8000
+    volumes:
+      - documents:/backend/uploads
     depends_on:
       - redis
-    volumes:
-      - ./backend:/backend
-      - /backend/.venv
     env_file:
       - ./backend/.env
+volumes:
+  documents:

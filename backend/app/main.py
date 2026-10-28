@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 from pymongo import MongoClient, AsyncMongoClient
-from fastapi import FastAPI
+from fastapi import FastAPI,APIRouter
 from app.routes import chats, auth, documents
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.checkpoint.mongodb import MongoDBSaver
@@ -55,10 +55,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-app.include_router(chats.router, tags=["chats"])
-app.include_router(auth.router, tags=["auth"])
-app.include_router(documents.router)
+app.include_router(chats.router, prefix="/api",tags=["chats"])
+app.include_router(auth.router, prefix="/api",tags=["auth"])
+app.include_router(documents.router,prefix="/api")
 
 
 @app.get("/health")

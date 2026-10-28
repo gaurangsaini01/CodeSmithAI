@@ -1,0 +1,33 @@
+services:
+  frontend:
+    build:
+      context: ./client
+      args:
+        VITE_API_URL: "http://IP:80/api"
+    ports:
+      - 80:80
+    depends_on:
+      - backend
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
+  worker:
+    build: ./backend
+    command: uv run arq app.worker.WorkerSettings
+    volumes:
+      - documents:/backend/uploads
+    depends_on:
+      - redis
+    env_file:
+      - ./backend/.env
+  backend:
+    build: ./backend
+    volumes:
+      - documents:/backend/uploads
+    depends_on:
+      - redis
+    env_file:
+      - ./backend/.env
+volumes:
+  documents:
