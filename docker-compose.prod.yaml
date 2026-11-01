@@ -3,7 +3,7 @@ services:
     build:
       context: ./client
       args:
-        VITE_API_URL: "http://IP:80/api"
+        VITE_API_URL: "/api"
     ports:
       - 80:80
     depends_on:
