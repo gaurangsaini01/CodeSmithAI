@@ -8,10 +8,12 @@ services:
       - 80:80
     depends_on:
       - backend
+    restart: unless-stopped
   redis:
     image: redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
   worker:
     build: ./backend
     command: uv run arq app.worker.WorkerSettings
@@ -21,6 +23,7 @@ services:
       - redis
     env_file:
       - ./backend/.env
+    restart: unless-stopped
   backend:
     build: ./backend
     volumes:
@@ -29,5 +32,6 @@ services:
       - redis
     env_file:
       - ./backend/.env
+    restart: unless-stopped
 volumes:
   documents:
