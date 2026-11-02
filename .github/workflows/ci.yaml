@@ -32,12 +32,12 @@ jobs:
         run : |
            docker build \
             --build-arg VITE_API_URL=/api \
-            -t $REGISTRY/client:${{github.sha}} -t $REGISTRY/client:latest ./client \
+            -t $REGISTRY/client:${{github.sha}} -t $REGISTRY/client:latest ./client 
             docker push --all-tags $REGISTRY/client
       - name: Build and Push Backend
         run: |
           docker build \
-          -t $REGISTRY/backend:${{github.sha}} -t $REGISTRY/backend:latest ./backend \
+          -t $REGISTRY/backend:${{github.sha}} -t $REGISTRY/backend:latest ./backend 
           docker push --all-tags $REGISTRY/backend
   deploy-to-gcp:
     needs: code-checkout
