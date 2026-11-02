@@ -1,0 +1,64 @@
+name: Build and push to GCP
+on:
+  push:
+    branches:
+      - main
+env:
+  REGISTRY: asia-south2-docker.pkg.dev/project-4d3d7acb-058d-4117-94f/codesmith
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  code-checkout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: 'actions/checkout@v7'
+
+      - name: Login to GCP
+        uses: 'google-github-actions/auth@v3'
+        id: auth
+        with:
+          workload_identity_provider: 'projects/273894459279/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'codesmith@project-4d3d7acb-058d-4117-94f.iam.gserviceaccount.com'
+          token_format: access_token
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          registry: asia-south2-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      - name: Build and Push Client
+        run : |
+           docker build \
+            --build-arg VITE_API_URL=/api \
+            -t $REGISTRY/client:${{github.sha}} -t $REGISTRY/client:latest ./client \
+            docker push --all-tags $REGISTRY/client
+      - name: Build and Push Backend
+        run: |
+          docker build \
+          -t $REGISTRY/backend:${{github.sha}} -t $REGISTRY/backend:latest ./backend \
+          docker push --all-tags $REGISTRY/backend
+  deploy-to-gcp:
+    needs: code-checkout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH
+        env:  
+          SSH_KEY: ${{secrets.VM_SSH_KEY}}
+        run: |
+            mkdir -p ~/.ssh
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            ssh-keyscan -H ${{ vars.VM_HOST }} >> ~/.ssh/known_hosts
+      - name: Deploy on VM
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes \
+            ${{ vars.VM_USER }}@${{ vars.VM_HOST }} '
+              cd ~/CodeSmithAI &&
+              git pull &&
+              docker compose -f docker-compose.prod.yaml pull &&
+              docker compose -f docker-compose.prod.yaml up -d
+            '
+
+
