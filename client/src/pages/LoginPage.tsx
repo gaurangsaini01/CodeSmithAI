@@ -55,7 +55,7 @@ export default function LoginPage() {
       subtitle="Log in to continue to your chats"
       footer={
         <>
-          No account yet?{" "}
+          No account yetzzz?{" "}
           <Link
             to="/signup"
             className="font-medium text-primary hover:underline"
