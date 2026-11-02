@@ -1,9 +1,6 @@
 services:
   frontend:
-    build:
-      context: ./client
-      args:
-        VITE_API_URL: "/api"
+    image: asia-south2-docker.pkg.dev/project-4d3d7acb-058d-4117-94f/codesmith/client:latest
     ports:
       - 80:80
     depends_on:
@@ -15,7 +12,7 @@ services:
       - "6379:6379"
     restart: unless-stopped
   worker:
-    build: ./backend
+    image: asia-south2-docker.pkg.dev/project-4d3d7acb-058d-4117-94f/codesmith/backend:latest
     command: uv run arq app.worker.WorkerSettings
     volumes:
       - documents:/backend/uploads
@@ -25,7 +22,7 @@ services:
       - ./backend/.env
     restart: unless-stopped
   backend:
-    build: ./backend
+    image: asia-south2-docker.pkg.dev/project-4d3d7acb-058d-4117-94f/codesmith/backend:latest
     volumes:
       - documents:/backend/uploads
     depends_on:
